@@ -1,0 +1,81 @@
+from ortools.linear_solver import pywraplp
+
+# Declara o solver: se PLI, usa-se SCIP; se PL, usa-se GLOP.
+solver = pywraplp.Solver.CreateSolver('SCIP')
+
+# Declara um número muito grande para ser usado no modelo
+infinity = solver.infinity()
+
+# Declara a função objetivo
+objetivo = solver.Objective()
+
+# Declara flexibilidade
+flexibilityCalories = 15
+flexibilityProtein = 15
+flexibilityCarbs = 15
+
+# Inicializa total de calorias + macros
+totalCalories = 0
+totalProtein = 0
+totalCarbs = 0
+
+# Lista de alimentos e seus valores nutricionais
+dados_alimentos = [
+    ("Macarrão", 0, infinity, True, 1.31, 0.045, 0.256, 0.006, 50),
+    ("Purê de Batata", 0, infinity, False, 1.12, 0.0185, 0.167, 0.035, 0),
+    ("Frango", 0, infinity, True, 2.16, 0.265, 0.0019, 0.106, 0),
+    ("Tapioca", 0, infinity, False, 2.16, 0.013, 0.533, 0.0001, 0),
+    ("Pão Francês", 0, infinity, False, 3*50, 0.08*50, 0.586*50, 0.032*50, 0),
+    ("Ovo Mexido", 0, infinity, False, 78, 6, 1, 4, 3),
+    ("Picanha", 0, infinity, True, 288, 28.8, 0, 21.6, 0),
+]
+
+# Variáveis de decisão
+variaveis = []
+for alimento, lb, ub, inteiro, cal, prot, carb, gord, minQtd in dados_alimentos:
+    var = solver.IntVar(lb, ub, alimento) if inteiro else solver.NumVar(lb, ub, alimento)
+    variaveis.append(var)
+
+# Restrição mínima para alguns alimentos
+for i, (_, _, _, _, _, _, _, _, minQtd) in enumerate(dados_alimentos):
+    if minQtd > 0:
+        solver.Add(variaveis[i] >= minQtd)
+
+# Objetivo: minimizar o custo total (aqui usando calorias como proxy, pode ser alterado)
+for i, (_, _, _, _, cal, prot, carb, gord, _) in enumerate(dados_alimentos):
+    objetivo.SetCoefficient(variaveis[i], cal)
+objetivo.SetMinimization()
+
+# Restrições nutricionais
+meta_calorias = 2000
+meta_proteina = 150
+meta_carboidrato = 250
+
+total_calorias = sum(var * cal for var, (_, _, _, _, cal, _, _, _, _) in zip(variaveis, dados_alimentos))
+total_proteina = sum(var * prot for var, (_, _, _, _, _, prot, _, _, _) in zip(variaveis, dados_alimentos))
+total_carboidrato = sum(var * carb for var, (_, _, _, _, _, _, carb, _, _) in zip(variaveis, dados_alimentos))
+
+solver.Add(total_calorias >= meta_calorias - flexibilityCalories)
+solver.Add(total_calorias <= meta_calorias + flexibilityCalories)
+
+solver.Add(total_proteina >= meta_proteina - flexibilityProtein)
+solver.Add(total_proteina <= meta_proteina + flexibilityProtein)
+
+solver.Add(total_carboidrato >= meta_carboidrato - flexibilityCarbs)
+solver.Add(total_carboidrato <= meta_carboidrato + flexibilityCarbs)
+
+# Resolver o problema
+status = solver.Solve()
+
+# Exibir os resultados
+if status == pywraplp.Solver.OPTIMAL:
+    print("Solução ótima encontrada!\n")
+    total_custo = 0
+    for i, (nome, _, _, _, cal, prot, carb, gord, _) in enumerate(dados_alimentos):
+        quantidade = variaveis[i].solution_value()
+        if quantidade > 0:
+            print(f"{nome}: {quantidade:.2f}")
+        total_custo += quantidade * cal
+    print(f"\nTotal de calorias: {total_custo:.2f}")
+else:
+    print("Não foi possível encontrar uma solução ótima.")
